@@ -20,6 +20,10 @@ spec:
     - name: application-image
       type: string
       description: Name of the application image
+    - name: galleon-layers
+      type: string
+      description: List of galleon layers to install
+      default: ""
   tasks:
     - name: fetch-source-repository
       taskRef:
@@ -46,9 +50,11 @@ spec:
         - name: contents
           value: |-
             FROM quay.io/wildfly/wildfly-runtime-centos7:latest
+            USER root
             COPY --from=$(params.application-image)-build-artifacts:latest --chown=jboss:root /s2i-output/server $JBOSS_HOME
-            USER jboss
             RUN ln -s $JBOSS_HOME /wildfly
+            USER jboss
+            CMD $JBOSS_HOME/bin/openshift-launch.sh
     - name: build-artifacts-image
       taskRef:
         name: hack-s2i
@@ -66,6 +72,8 @@ spec:
           value: "10"
         - name: IMAGE_NAME
           value: $(params.application-image)-build-artifacts:latest
+        - name: GALLEON_LAYERS
+          value: $(params.galleon-layers)
     - name: build-application-image
       taskRef:
         name: buildah

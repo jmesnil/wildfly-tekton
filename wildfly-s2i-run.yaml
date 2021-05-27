@@ -11,11 +11,13 @@ spec:
       persistentvolumeclaim:
         claimName: wildfly-source-pvc
   params:
+   - name: application-image
+     value: quay.io/jmesnil/wildfly-tekton-app
    - name: source-url
      value: https://github.com/wildfly/quickstart.git
    - name: source-ref
      value: "23.0.2.Final"
    - name: source-context-dir
      value: microprofile-config
-   - name: application-image
-     value: quay.io/jmesnil/wildfly-tekton-app
+   - name: galleon-layers
+     value: jaxrs-server,microprofile-platform

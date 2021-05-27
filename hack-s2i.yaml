@@ -31,6 +31,9 @@ spec:
     - name: LOGLEVEL
       description: Log level when running the S2I binary
       default: "0"
+    - name: GALLEON_LAYERS
+      description: List of galleon layers to provision
+      default: ""
   workspaces:
     - name: source
     - name: sslcertdir
@@ -42,18 +45,14 @@ spec:
     - name: generate
       image: quay.io/openshift-pipeline/s2i:nightly
       workingDir: $(workspaces.source.path)
-      command:
-        - /usr/local/bin/s2i
-        - --loglevel=$(params.LOGLEVEL)
-        - build
-        - $(params.PATH_CONTEXT)
-        - $(params.BUILDER_IMAGE)
-        - -e
-        - GALLEON_PROVISION_DEFAULT_FAT_SERVER=true
-        - --assemble-user
-        - jboss
-        - --as-dockerfile
-        - /gen-source/Dockerfile.gen
+      script: |
+        [[ "x$(params.GALLEON_LAYERS)" != "x" ]] && ARGS="-e GALLEON_PROVISION_LAYERS=$(params.GALLEON_LAYERS)"
+        /usr/local/bin/s2i --loglevel=$(params.LOGLEVEL) \
+          build $(params.PATH_CONTEXT) $(params.BUILDER_IMAGE) \
+          -e GALLEON_PROVISION_DEFAULT_FAT_SERVER=true \
+          $ARGS \
+           --assemble-user jboss \
+           --as-dockerfile /gen-source/Dockerfile.gen
       volumeMounts:
         - mountPath: /gen-source
           name: gen-source
