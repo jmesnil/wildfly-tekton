@@ -47,8 +47,8 @@ spec:
           value: |-
             FROM quay.io/wildfly/wildfly-runtime-centos7:latest
             COPY --from=$(params.application-image)-build-artifacts:latest --chown=jboss:root /s2i-output/server $JBOSS_HOME
-            RUN ln -s $JBOSS_HOME /wildfly
             USER jboss
+            RUN ln -s $JBOSS_HOME /wildfly
     - name: build-artifacts-image
       taskRef:
         name: hack-s2i

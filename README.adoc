@@ -4,7 +4,7 @@
 ## Prerequisites
 
 * Access to a Kubenetes cluster (e.g. `minikube`)
-* Tekton is installed in the cluster by following its https://tekton.dev/docs/getting-started/[its instructions]:
+* Tekton is installed in the cluster by following https://tekton.dev/docs/getting-started/[its instructions]:
 
 [source,shell]
 ----
@@ -35,21 +35,21 @@ kubectl apply -f ./auth.yaml
 The pipeline will use a persistent volume to store the application code and any artifacts that are generated when the pipeline is run:
 
 [source,shell]
----
-kubect apply -f ./resources.yaml
---- 
+----
+kubectl apply -f ./resources.yaml
+----
 
 ## Setup required tasks
 
 The pipeline requires tasks to be able to clone a Git repository, write files and build docker images
 
 [source,shell]
----
+----
 kubectl apply \
   -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.3/git-clone.yaml \
   -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/write-file/0.1/write-file.yaml \
   -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildah/0.2/buildah.yaml
---- 
+----
 
 We also need a modified 's2i' task to properly configure WildFly S2I images:
 
@@ -63,9 +63,15 @@ kubectl apply -f ./hack-s2i.yaml
 The pipeline can be installed with:
 
 [source,shell]
----
+----
 kubectl apply -f ./wildfly-s2i-pipeline.yaml
----
+----
+
+## Run Tekton dashboard
+
+It is simpler to monitor the Pipeline using the Tekton dashboard.
+
+It can be installed by following the https://github.com/tektoncd/dashboard/blob/main/docs/install.md#installing-tekton-dashboard-on-kubernetes[instructions], run a `kubectl proxy` and browse http://localhost:8001/api/v1/namespaces/tekton-pipelines/services/tekton-dashboard:http/proxy/
 
 ## Run the pipeline
 
