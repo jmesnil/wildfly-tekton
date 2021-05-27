@@ -14,16 +14,10 @@ kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline
 ## Setup authentication to pull and push images
 
 The images built by the pipeline are pulled and pushed from the quay.io registry.
-We need to create a `secret` to hold the user credentials:
+We need to create a `secret` to hold the user credentials. 
 
-[source,shell]
-----
-kubectl create secret  docker-registry quay-user-pass \
-  --docker-username=<quay.io username> \
-  --docker-password=<quay.io password>
-----
-
-We will use this `quay-user-pass` secret to authenticate against the quay.io Docker registry and associated it with the `wildfly-tekton-service-account` that is used when the pipeline is run:
+Please modify the secret in `./auth.yaml` to provide your user credentials for `quay.io`.
+Once the secret is modify, we will create it as well as the associted service account:
 
 [source,shell]
 ----
@@ -51,12 +45,12 @@ kubectl apply \
   -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildah/0.2/buildah.yaml
 ----
 
-We also need a modified 's2i' task to properly configure WildFly S2I images:
+We also need a modified `s2i` task to properly configure WildFly S2I images:
 
 [source,shell]
----
+----
 kubectl apply -f ./hack-s2i.yaml
----
+----
 
 ## Setup the pipeline
 
