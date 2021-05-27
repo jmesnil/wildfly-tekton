@@ -48,7 +48,6 @@ spec:
         - build
         - $(params.PATH_CONTEXT)
         - $(params.BUILDER_IMAGE)
-        - --incremental
         - -e
         - GALLEON_PROVISION_DEFAULT_FAT_SERVER=true
         - --assemble-user
