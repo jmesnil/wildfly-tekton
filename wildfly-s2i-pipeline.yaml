@@ -1,0 +1,80 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: wildfly-s2i-pipeline
+spec:
+  workspaces:
+    - name: shared-workspace
+  params:
+    - name: source-url
+      type: string
+      description: Git Repository URL
+    - name: source-ref
+      type: string
+      description: Git Repository Reference
+      default: ""
+    - name: source-context-dir
+      type: string
+      description: Subdirectory containing the application
+      default: ""
+    - name: application-image
+      type: string
+      description: Name of the application image
+  tasks:
+    - name: fetch-source-repository
+      taskRef:
+        name: git-clone
+      workspaces:
+      - name: output
+        workspace: shared-workspace
+      params:
+        - name: url
+          value: $(params.source-url)
+        - name: revision
+          value: $(params.source-ref)
+        - name: deleteExisting
+          value: "true"
+    - name: write-runtime-dockerfile
+      taskRef:
+        name: write-file
+      workspaces:
+       - name: output
+         workspace: shared-workspace
+      params:
+        - name: path 
+          value: ./Dockerfile
+        - name: contents
+          value: |-
+            FROM quay.io/wildfly/wildfly-runtime-centos7:latest
+            COPY --from=$(params.application-image)-build-artifacts:latest --chown=jboss:root /s2i-output/server $JBOSS_HOME
+            RUN ln -s $JBOSS_HOME /wildfly
+            USER jboss
+    - name: build-artifacts-image
+      taskRef:
+        name: hack-s2i
+      runAfter:
+        - fetch-source-repository
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: BUILDER_IMAGE
+          value: 'quay.io/wildfly/wildfly-centos7:latest'
+        - name: PATH_CONTEXT
+          value: $(params.source-context-dir)
+        - name: LOGLEVEL
+          value: "10"
+        - name: IMAGE_NAME
+          value: $(params.application-image)-build-artifacts:latest
+    - name: build-application-image
+      taskRef:
+        name: buildah
+      runAfter:
+        - build-artifacts-image
+        - write-runtime-dockerfile
+      workspaces:
+       - name: source
+         workspace: shared-workspace
+      params:
+       - name: IMAGE
+         value: $(params.application-image)

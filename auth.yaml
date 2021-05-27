@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: wildfly-tekton-service-account
+secrets:
+    - name: quay-user-pass

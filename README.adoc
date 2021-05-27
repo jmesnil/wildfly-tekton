@@ -1,0 +1,91 @@
+= Tekton Pipeline for WildFly
+:toc:               left
+
+## Prerequisites
+
+* Access to a Kubenetes cluster (e.g. `minikube`)
+* Tekton is installed in the cluster by following its https://tekton.dev/docs/getting-started/[its instructions]:
+
+[source,shell]
+----
+kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
+----
+
+## Setup authentication to pull and push images
+
+The images built by the pipeline are pulled and pushed from the quay.io registry.
+We need to create a `secret` to hold the user credentials:
+
+[source,shell]
+----
+kubectl create secret  docker-registry quay-user-pass \
+  --docker-username=<quay.io username> \
+  --docker-password=<quay.io password>
+----
+
+We will use this `quay-user-pass` secret to authenticate against the quay.io Docker registry and associated it with the `wildfly-tekton-service-account` that is used when the pipeline is run:
+
+[source,shell]
+----
+kubectl apply -f ./auth.yaml
+----
+
+## Setup resources
+
+The pipeline will use a persistent volume to store the application code and any artifacts that are generated when the pipeline is run:
+
+[source,shell]
+---
+kubect apply -f ./resources.yaml
+--- 
+
+## Setup required tasks
+
+The pipeline requires tasks to be able to clone a Git repository, write files and build docker images
+
+[source,shell]
+---
+kubectl apply \
+  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.3/git-clone.yaml \
+  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/write-file/0.1/write-file.yaml \
+  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildah/0.2/buildah.yaml
+--- 
+
+We also need a modified 's2i' task to properly configure WildFly S2I images:
+
+[source,shell]
+---
+kubectl apply -f ./hack-s2i.yaml
+---
+
+## Setup the pipeline
+
+The pipeline can be installed with:
+
+[source,shell]
+---
+kubectl apply -f ./wildfly-s2i-pipeline.yaml
+---
+
+## Run the pipeline
+
+Up to this point, we have setup a pipeline to be able to build any application running on WildFly.
+
+However to run this pipeline, we need to create a `PipelineRun` with some required parameters:
+
+* `application-image` - Name of the application image - *required*
+* `source-url` - URL of the Git repository containing the application - *required*
+* `source-ref` - Git Repository Reference - *optional*
+* `source-context-dir` - Subdirectory containing the application - *optional*
+
+For this demo, we will build an application image named `quay.io/jmesnil/wildfly-tekton-app` from the `microprofile-config` quickstart (fetched from the Git repository `https://github.com/wildfly/quickstart.git` with the `23.0.2.Final` tag)
+
+[WARNING]
+====
+Please change the name of the application image to use your own quay.io repository as you will not be able to push to the one specified in the file (`quay.io/jmesnil`)
+====
+
+[source,shell]
+----
+kubectl apply -f ./wildfly-s2i-run.yaml
+----
