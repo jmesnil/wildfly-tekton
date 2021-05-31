@@ -101,8 +101,8 @@ We can watch the progress of the pipeline run with:
 [source,shell]
 ----
 kubectl get pipelinerun -w
-...
 NAME              SUCCEEDED   REASON      STARTTIME   COMPLETIONTIME
+...
 wildfly-s2i-run   True        Succeeded   32m         72s
 ----
 
