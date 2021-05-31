@@ -74,6 +74,8 @@ spec:
           value: $(params.application-image)-build-artifacts:latest
         - name: GALLEON_LAYERS
           value: $(params.galleon-layers)
+        - name: TLSVERIFY
+          value: "false"
     - name: build-application-image
       taskRef:
         name: hack-buildah
@@ -86,3 +88,5 @@ spec:
       params:
        - name: IMAGE
          value: $(params.application-image)
+       - name: TLSVERIFY
+         value: "false"
