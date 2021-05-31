@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  name: wildfly-s2i-run
+  generateName: wildfly-s2i-run-
 spec:
   pipelineRef:
     name: wildfly-s2i-pipeline

@@ -84,17 +84,12 @@ For this demo, we will build an application image named `registry.minikube/wildf
 
 [source,shell]
 ----
-kubectl apply -f ./wildfly-s2i-run.yaml
+kubectl create -f ./wildfly-s2i-run.yaml
 ----
 
 Once the pipeline run is finished, the application image has been pushed to Minikube's registry.
 
 Let's create a deployment to run this image
-
-[source,shell]
-----
-kubectl apply -f ./wildfly-s2i-run.yaml
-----
 
 We can watch the progress of the pipeline run with:
 
@@ -103,7 +98,7 @@ We can watch the progress of the pipeline run with:
 kubectl get pipelinerun -w
 NAME              SUCCEEDED   REASON      STARTTIME   COMPLETIONTIME
 ...
-wildfly-s2i-run   True        Succeeded   32m         72s
+wildfly-s2i-run-dxs6x   True        Succeeded   32m         72s
 ----
 
 ## Deploy the Application
