@@ -76,7 +76,7 @@ spec:
           value: $(params.galleon-layers)
     - name: build-application-image
       taskRef:
-        name: buildah
+        name: hack-buildah
       runAfter:
         - build-artifacts-image
         - write-runtime-dockerfile
