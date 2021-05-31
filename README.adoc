@@ -3,37 +3,43 @@
 
 ## Prerequisites
 
-* Access to a Kubenetes cluster (e.g. `minikube`)
-* Tekton is installed in the cluster by following https://tekton.dev/docs/getting-started/[its instructions]:
+### Setup Minikube and Its Image Registry
+
+For simplicity, we will pull and push images directly from an image registry in Minikube.
+In order to do so, we will start minikube with the `--insecure-registry "10.0.0.0/24"` parameters so that its local image registry is properly
+configured as an insecure registry:
+
+[source,shell]
+----
+minikube start --insecure-registry "10.0.0.0/24"
+----
+
+We will also enable the the `registry` and `registry-aliases` addons from minikube:
+
+[source,shell]
+----
+minikube addons enable registry
+minikube addons enable registry-aliases
+----
+
+### Install Tekton
+
+Tekton must installed in the cluster by following https://tekton.dev/docs/getting-started/[its instructions]:
 
 [source,shell]
 ----
 kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
 ----
 
-## Setup authentication to pull and push images
+#### Install Tekton dashboard
 
-The images built by the pipeline are pulled and pushed from the quay.io registry.
-We need to create a `secret` to hold the user credentials. 
+It is simpler to monitor the Pipeline using the Tekton dashboard.
 
-Please modify the secret in `./auth.yaml` to provide your user credentials for `quay.io`.
-Once the secret is modify, we will create it as well as the associted service account:
+It can be installed by following the https://github.com/tektoncd/dashboard/blob/main/docs/install.md#installing-tekton-dashboard-on-kubernetes[instructions], run a `kubectl proxy` and browse http://localhost:8001/api/v1/namespaces/tekton-pipelines/services/tekton-dashboard:http/proxy/
 
-[source,shell]
-----
-kubectl apply -f ./auth.yaml
-----
+## Install the Pipeline and Its Tasks
 
-## Setup resources
-
-The pipeline will use a persistent volume to store the application code and any artifacts that are generated when the pipeline is run:
-
-[source,shell]
-----
-kubectl apply -f ./resources.yaml
-----
-
-## Setup required tasks
+### Install the Required Tasks
 
 The pipeline requires tasks to be able to clone a Git repository, write files and build docker images
 
@@ -41,18 +47,17 @@ The pipeline requires tasks to be able to clone a Git repository, write files an
 ----
 kubectl apply \
   -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.3/git-clone.yaml \
-  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/write-file/0.1/write-file.yaml \
-  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildah/0.2/buildah.yaml
+  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/write-file/0.1/write-file.yaml
 ----
 
-We also need a modified `s2i` task to properly configure WildFly S2I images:
+We also need modified `s2i` and `buildah` task to properly build the WildFly S2I images:
 
 [source,shell]
 ----
-kubectl apply -f ./hack-s2i.yaml
+kubectl apply -f ./hack-s2i.yaml -f ./hack-buildah.yaml
 ----
 
-## Setup the pipeline
+### Install the Pipeline
 
 The pipeline can be installed with:
 
@@ -61,13 +66,10 @@ The pipeline can be installed with:
 kubectl apply -f ./wildfly-s2i-pipeline.yaml
 ----
 
-## Run Tekton dashboard
+The pipeline will use a persistent volume to store the application code and any artifacts that are generated when the pipeline is run.
+This persistent volume is installed when the `wildfly-s2i-pipeline.yaml` is applied.
 
-It is simpler to monitor the Pipeline using the Tekton dashboard.
-
-It can be installed by following the https://github.com/tektoncd/dashboard/blob/main/docs/install.md#installing-tekton-dashboard-on-kubernetes[instructions], run a `kubectl proxy` and browse http://localhost:8001/api/v1/namespaces/tekton-pipelines/services/tekton-dashboard:http/proxy/
-
-## Run the pipeline
+## Run the Pipeline
 
 Up to this point, we have setup a pipeline to be able to build any application running on WildFly.
 
@@ -78,14 +80,45 @@ However to run this pipeline, we need to create a `PipelineRun` with some requir
 * `source-ref` - Git Repository Reference - *optional*
 * `source-context-dir` - Subdirectory containing the application - *optional*
 
-For this demo, we will build an application image named `quay.io/jmesnil/wildfly-tekton-app` from the `microprofile-config` quickstart (fetched from the Git repository `https://github.com/wildfly/quickstart.git` with the `23.0.2.Final` tag)
-
-[WARNING]
-====
-Please change the name of the application image to use your own quay.io repository as you will not be able to push to the one specified in the file (`quay.io/jmesnil`)
-====
+For this demo, we will build an application image named `registry.minikube/wildfly/tekton-app` from the `microprofile-config` quickstart (fetched from the Git repository `https://github.com/wildfly/quickstart.git` with the `23.0.2.Final` tag)
 
 [source,shell]
 ----
 kubectl apply -f ./wildfly-s2i-run.yaml
+----
+
+Once the pipeline run is finished, the application image has been pushed to Minikube's registry.
+
+Let's create a deployment to run this image
+
+[source,shell]
+----
+kubectl apply -f ./wildfly-s2i-run.yaml
+----
+
+We can watch the progress of the pipeline run with:
+
+[source,shell]
+----
+kubectl get pipelinerun -w
+...
+NAME              SUCCEEDED   REASON      STARTTIME   COMPLETIONTIME
+wildfly-s2i-run   True        Succeeded   32m         72s
+----
+
+## Deploy the Application
+
+We can then quickly check that the application image works as expected by creating a `Deployment`:
+
+[source,shell]
+----
+kubectl create deployment my-wildfly-app --image=registry.minikube/wildfly/tekton-app
+kubectl expose deployment my-wildfly-app --type=LoadBalancer --port=8080
+----
+
+We have expose the application with a service and can use `minikube service` to access it:
+
+[source,shell]
+----
+minikube service my-wildfly-app
 ----

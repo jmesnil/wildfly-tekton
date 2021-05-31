@@ -1,9 +1,8 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  name: wildfly-s2i-pipeline-run
+  name: wildfly-s2i-run
 spec:
-  serviceAccountName: wildfly-tekton-service-account
   pipelineRef:
     name: wildfly-s2i-pipeline
   workspaces:
@@ -12,7 +11,7 @@ spec:
         claimName: wildfly-source-pvc
   params:
    - name: application-image
-     value: registry.minikube/jmesnil/wildfly-tekton-app
+     value: registry.minikube/wildfly/tekton-app
    - name: source-url
      value: https://github.com/wildfly/quickstart.git
    - name: source-ref
