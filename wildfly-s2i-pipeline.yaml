@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: wildfly-source-pvc
+  name: wildfly-source
 spec:
   accessModes:
     - ReadWriteOnce
@@ -15,13 +15,426 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: varlibcontainers
+  name: wildfly-varlibcontainers
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 500Mi
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: wildfly-git-clone
+  labels:
+    app.kubernetes.io/version: "0.3"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.21.0"
+    tekton.dev/tags: git
+    tekton.dev/displayName: "git clone"
+spec:
+  description: >-
+    These Tasks are Git tasks to work with repositories used by other tasks
+    in your Pipeline.
+
+    The git-clone Task will clone a repo from the provided url into the
+    output Workspace. By default the repo will be cloned into the root of
+    your Workspace. You can clone into a subdirectory by setting this Task's
+    subdirectory param. This Task also supports sparse checkouts. To perform
+    a sparse checkout, pass a list of comma separated directory patterns to
+    this Task's sparseCheckoutDirectories param.
+
+  workspaces:
+    - name: output
+      description: The git repo will be cloned onto the volume backing this workspace
+  params:
+    - name: url
+      description: git url to clone
+      type: string
+    - name: revision
+      description: git revision to checkout (branch, tag, sha, ref…)
+      type: string
+      default: ""
+    - name: refspec
+      description: (optional) git refspec to fetch before checking out revision
+      default: ""
+    - name: submodules
+      description: defines if the resource should initialize and fetch the submodules
+      type: string
+      default: "true"
+    - name: depth
+      description: performs a shallow clone where only the most recent commit(s) will be fetched
+      type: string
+      default: "1"
+    - name: sslVerify
+      description: defines if http.sslVerify should be set to true or false in the global git config
+      type: string
+      default: "true"
+    - name: subdirectory
+      description: subdirectory inside the "output" workspace to clone the git repo into
+      type: string
+      default: ""
+    - name: sparseCheckoutDirectories
+      description: defines which directories patterns to match or exclude when performing a sparse checkout
+      type: string
+      default: ""
+    - name: deleteExisting
+      description: clean out the contents of the repo's destination directory (if it already exists) before trying to clone the repo there
+      type: string
+      default: "true"
+    - name: httpProxy
+      description: git HTTP proxy server for non-SSL requests
+      type: string
+      default: ""
+    - name: httpsProxy
+      description: git HTTPS proxy server for SSL requests
+      type: string
+      default: ""
+    - name: noProxy
+      description: git no proxy - opt out of proxying HTTP/HTTPS requests
+      type: string
+      default: ""
+    - name: verbose
+      description: log the commands used during execution
+      type: string
+      default: "true"
+    - name: gitInitImage
+      description: the image used where the git-init binary is
+      type: string
+      default: "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.21.0"
+  results:
+    - name: commit
+      description: The precise commit SHA that was fetched by this Task
+    - name: url
+      description: The precise URL that was fetched by this Task
+  steps:
+    - name: clone
+      image: $(params.gitInitImage)
+      env:
+      - name: PARAM_URL
+        value: $(params.url)
+      - name: PARAM_REVISION
+        value: $(params.revision)
+      - name: PARAM_REFSPEC
+        value: $(params.refspec)
+      - name: PARAM_SUBMODULES
+        value: $(params.submodules)
+      - name: PARAM_DEPTH
+        value: $(params.depth)
+      - name: PARAM_SSL_VERIFY
+        value: $(params.sslVerify)
+      - name: PARAM_SUBDIRECTORY
+        value: $(params.subdirectory)
+      - name: PARAM_DELETE_EXISTING
+        value: $(params.deleteExisting)
+      - name: PARAM_HTTP_PROXY
+        value: $(params.httpProxy)
+      - name: PARAM_HTTPS_PROXY
+        value: $(params.httpsProxy)
+      - name: PARAM_NO_PROXY
+        value: $(params.noProxy)
+      - name: PARAM_VERBOSE
+        value: $(params.verbose)
+      - name: PARAM_SPARSE_CHECKOUT_DIRECTORIES
+        value: $(params.sparseCheckoutDirectories)
+      - name: WORKSPACE_OUTPUT_PATH
+        value: $(workspaces.output.path)
+      script: |
+        #!/bin/sh
+        set -eu -o pipefail
+
+        if [[ "${PARAM_VERBOSE}" == "true" ]] ; then
+          set -x
+        fi
+
+        CHECKOUT_DIR="${WORKSPACE_OUTPUT_PATH}/${PARAM_SUBDIRECTORY}"
+
+        cleandir() {
+          # Delete any existing contents of the repo directory if it exists.
+          #
+          # We don't just "rm -rf $CHECKOUT_DIR" because $CHECKOUT_DIR might be "/"
+          # or the root of a mounted volume.
+          if [[ -d "$CHECKOUT_DIR" ]] ; then
+            # Delete non-hidden files and directories
+            rm -rf "$CHECKOUT_DIR"/*
+            # Delete files and directories starting with . but excluding ..
+            rm -rf "$CHECKOUT_DIR"/.[!.]*
+            # Delete files and directories starting with .. plus any other character
+            rm -rf "$CHECKOUT_DIR"/..?*
+          fi
+        }
+
+        if [[ "${PARAM_DELETE_EXISTING}" == "true" ]] ; then
+          cleandir
+        fi
+
+        test -z "${PARAM_HTTP_PROXY}" || export HTTP_PROXY="${PARAM_HTTP_PROXY}"
+        test -z "${PARAM_HTTPS_PROXY}" || export HTTPS_PROXY="${PARAM_HTTPS_PROXY}"
+        test -z "${PARAM_NO_PROXY}" || export NO_PROXY="${PARAM_NO_PROXY}"
+
+        /ko-app/git-init \
+          -url "${PARAM_URL}" \
+          -revision "${PARAM_REVISION}" \
+          -refspec "${PARAM_REFSPEC}" \
+          -path "$CHECKOUT_DIR" \
+          -sslVerify="${PARAM_SSL_VERIFY}" \
+          -submodules="${PARAM_SUBMODULES}" \
+          -depth "${PARAM_DEPTH}" \
+          -sparseCheckoutDirectories "${PARAM_SPARSE_CHECKOUT_DIRECTORIES}"
+        cd "$CHECKOUT_DIR"
+        RESULT_SHA="$(git rev-parse HEAD)"
+        EXIT_CODE="$?"
+        if [ "$EXIT_CODE" != 0 ] ; then
+          exit $EXIT_CODE
+        fi
+        # ensure we don't add a trailing newline to the result
+        echo -n "$RESULT_SHA" > $(results.commit.path)
+        echo -n "${PARAM_URL}" > $(results.url.path)
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: wildfly-s2i
+  labels:
+    app.kubernetes.io/version: "0.2"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/tags: image-build
+spec:
+  description: >-
+    Source-to-Image (S2I) is a toolkit and workflow for building reproducible
+    container images from source code
+
+    S2I produces images by injecting source code into a base S2I container image
+    and letting the container prepare that source code for execution. The base
+    S2I container images contains the language runtime and build tools needed for
+    building and running the source code.
+
+  params:
+    - name: BUILDER_IMAGE
+      description: The location of the s2i builder image.
+    - name: IMAGE_NAME
+      description: Reference of the image S2I will produce.
+    - name: PATH_CONTEXT
+      description: The location of the path to run s2i from.
+      default: .
+    - name: TLSVERIFY
+      description: Verify the TLS on the registry endpoint (for push/pull to a non-TLS registry)
+      default: "true"
+    - name: LOGLEVEL
+      description: Log level when running the S2I binary
+      default: "0"
+    - name: GALLEON_LAYERS
+      description: List of galleon layers to provision
+      default: ""
+  workspaces:
+    - name: source
+    - name: sslcertdir
+      optional: true
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the image just built.
+  steps:
+    - name: generate
+      image: quay.io/openshift-pipeline/s2i:nightly
+      workingDir: $(workspaces.source.path)
+      script: |
+        [[ "x$(params.GALLEON_LAYERS)" != "x" ]] && ARGS="-e GALLEON_PROVISION_LAYERS=$(params.GALLEON_LAYERS)"
+        /usr/local/bin/s2i --loglevel=$(params.LOGLEVEL) \
+          build $(params.PATH_CONTEXT) $(params.BUILDER_IMAGE) \
+          -e GALLEON_PROVISION_DEFAULT_FAT_SERVER=true \
+          $ARGS \
+           --assemble-user jboss \
+           --as-dockerfile /gen-source/Dockerfile.gen
+      volumeMounts:
+        - mountPath: /gen-source
+          name: gen-source
+    - name: build
+      image: quay.io/buildah/stable:v1.17.0
+      workingDir: /gen-source
+      script: |
+        [[ "$(workspaces.sslcertdir.bound)" == "true" ]] && CERT_DIR_FLAG="--cert-dir $(workspaces.sslcertdir.path)"
+        buildah ${CERT_DIR_FLAG} bud --tls-verify=$(params.TLSVERIFY) --layers \
+        -f /gen-source/Dockerfile.gen -t $(params.IMAGE_NAME) .
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - mountPath: /var/lib/containers
+          name: varlibcontainers
+        - mountPath: /gen-source
+          name: gen-source
+    - name: push
+      image: quay.io/buildah/stable:v1.17.0
+      script: |
+        [[ "$(workspaces.sslcertdir.bound)" == "true" ]] && CERT_DIR_FLAG="--cert-dir $(workspaces.sslcertdir.path)"
+        buildah ${CERT_DIR_FLAG} push --tls-verify=$(params.TLSVERIFY) --digestfile $(workspaces.source.path)/image-digest \
+        $(params.IMAGE_NAME) docker://$(params.IMAGE_NAME)
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - mountPath: /var/lib/containers
+          name: varlibcontainers
+    - name: digest-to-results
+      image: $(params.BUILDER_IMAGE)
+      script: cat $(workspaces.source.path)/image-digest | tee /tekton/results/IMAGE_DIGEST
+  volumes:
+    - persistentVolumeClaim:
+        claimName: wildfly-varlibcontainers
+      name: varlibcontainers
+    - emptyDir: {}
+      name: gen-source
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: wildfly-write-file
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: generic
+    tekton.dev/displayName: Write a file
+spec:
+  description: >-
+    Write a file to a workspace
+
+    This task can be used to write a file onto the output workspace.
+    Use parameter expansion to insert variable content into the written
+    file. It can also set specific permissions on the file.
+  params:
+    - name: path
+      type: string
+      description: >
+        Relative path to create within the workspace. Directories will
+        be created as necessary.
+    - name: contents
+      type: string
+      description: >
+        Contents of the file to create.
+    - name: mode
+      type: string
+      default: "0755"
+      description: >
+        chmod-style permission string to apply to the file. Note that
+        octal numbers need quoting in YAML. Mode will not be applied
+        to created directories.
+  workspaces:
+    - name: output
+      description: Workspace onto which the file is written.
+  steps:
+    - name: write-file
+      image: docker.io/library/alpine:3.12@sha256:36553b10a4947067b9fbb7d532951066293a68eae893beba1d9235f7d11a20ad
+      workingDir: $(workspaces.output.path)
+      env:
+        - name: PARAM_PATH
+          value: $(params.path)
+        - name: PARAM_MODE
+          value: $(params.mode)
+        - name: PARAM_CONTENTS
+          value: $(params.contents)
+      script: |
+        #!/bin/sh
+        set -eu
+        DIRNAME=$(dirname "${PARAM_PATH}")
+        mkdir -p "$DIRNAME"
+        printf '%s' "${PARAM_CONTENTS}" > "./${PARAM_PATH}"
+        chmod "${PARAM_MODE}" "./${PARAM_PATH}"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: wildfly-buildah
+  labels:
+    app.kubernetes.io/version: "0.2"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/tags: image-build
+spec:
+  description: >-
+    Buildah task builds source into a container image and
+    then pushes it to a container registry.
+
+    Buildah Task builds source into a container image using Project Atomic's
+    Buildah build tool.It uses Buildah's support for building from Dockerfiles,
+    using its buildah bud command.This command executes the directives in the
+    Dockerfile to assemble a container image, then pushes that image to a
+    container registry.
+
+  params:
+  - name: IMAGE
+    description: Reference of the image buildah will produce.
+  - name: BUILDER_IMAGE
+    description: The location of the buildah builder image.
+    default: quay.io/buildah/stable:v1.17.0
+  - name: STORAGE_DRIVER
+    description: Set buildah storage driver
+    default: overlay
+  - name: DOCKERFILE
+    description: Path to the Dockerfile to build.
+    default: ./Dockerfile
+  - name: CONTEXT
+    description: Path to the directory to use as context.
+    default: .
+  - name: TLSVERIFY
+    description: Verify the TLS on the registry endpoint (for push/pull to a non-TLS registry)
+    default: "true"
+  - name: FORMAT
+    description: The format of the built container, oci or docker
+    default: "oci"
+  - name: BUILD_EXTRA_ARGS
+    description: Extra parameters passed for the build command when building images.
+    default: ""
+  - name: PUSH_EXTRA_ARGS
+    description: Extra parameters passed for the push command when pushing images.
+    type: string
+    default: ""
+  workspaces:
+  - name: source
+  - name: sslcertdir
+    optional: true
+  results:
+  - name: IMAGE_DIGEST
+    description: Digest of the image just built.
+  steps:
+  - name: build
+    image: $(params.BUILDER_IMAGE)
+    workingDir: $(workspaces.source.path)
+    script: |
+      [[ "$(workspaces.sslcertdir.bound)" == "true" ]] && CERT_DIR_FLAG="--cert-dir $(workspaces.sslcertdir.path)"
+      buildah ${CERT_DIR_FLAG} --storage-driver=$(params.STORAGE_DRIVER) bud \
+        $(params.BUILD_EXTRA_ARGS) --format=$(params.FORMAT) \
+        --tls-verify=$(params.TLSVERIFY) --no-cache \
+        -f $(params.DOCKERFILE) -t $(params.IMAGE) $(params.CONTEXT)
+    volumeMounts:
+    - name: varlibcontainers
+      mountPath: /var/lib/containers
+    securityContext:
+      privileged: true
+
+  - name: push
+    image: $(params.BUILDER_IMAGE)
+    workingDir: $(workspaces.source.path)
+    script: |
+      [[ "$(workspaces.sslcertdir.bound)" == "true" ]] && CERT_DIR_FLAG="--cert-dir $(workspaces.sslcertdir.path)"
+      buildah ${CERT_DIR_FLAG} --storage-driver=$(params.STORAGE_DRIVER) push \
+        $(params.PUSH_EXTRA_ARGS) --tls-verify=$(params.TLSVERIFY) \
+        --digestfile $(workspaces.source.path)/image-digest $(params.IMAGE) \
+        docker://$(params.IMAGE)
+    volumeMounts:
+    - name: varlibcontainers
+      mountPath: /var/lib/containers
+    securityContext:
+      privileged: true
+
+  - name: digest-to-results
+    image: $(params.BUILDER_IMAGE)
+    script: cat $(workspaces.source.path)/image-digest | tee /tekton/results/IMAGE_DIGEST
+
+  volumes:
+    - persistentVolumeClaim:
+        claimName: wildfly-varlibcontainers
+      name: varlibcontainers
 ---
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
@@ -52,7 +465,7 @@ spec:
   tasks:
     - name: fetch-source-repository
       taskRef:
-        name: git-clone
+        name: wildfly-git-clone
       workspaces:
       - name: output
         workspace: shared-workspace
@@ -65,7 +478,7 @@ spec:
           value: "true"
     - name: write-runtime-dockerfile
       taskRef:
-        name: write-file
+        name: wildfly-write-file
       workspaces:
        - name: output
          workspace: shared-workspace
@@ -82,7 +495,7 @@ spec:
             CMD $JBOSS_HOME/bin/openshift-launch.sh
     - name: build-artifacts-image
       taskRef:
-        name: hack-s2i
+        name: wildfly-s2i
       runAfter:
         - fetch-source-repository
       workspaces:
@@ -103,7 +516,7 @@ spec:
           value: "false"
     - name: build-application-image
       taskRef:
-        name: hack-buildah
+        name: wildfly-buildah
       runAfter:
         - build-artifacts-image
         - write-runtime-dockerfile

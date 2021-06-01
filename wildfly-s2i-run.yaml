@@ -8,7 +8,7 @@ spec:
   workspaces:
     - name: shared-workspace
       persistentvolumeclaim:
-        claimName: wildfly-source-pvc
+        claimName: wildfly-source
   params:
    - name: application-image
      value: registry.minikube/wildfly/tekton-app

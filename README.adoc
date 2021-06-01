@@ -37,27 +37,7 @@ It is simpler to monitor the Pipeline using the Tekton dashboard.
 
 It can be installed by following the https://github.com/tektoncd/dashboard/blob/main/docs/install.md#installing-tekton-dashboard-on-kubernetes[instructions], run a `kubectl proxy` and browse http://localhost:8001/api/v1/namespaces/tekton-pipelines/services/tekton-dashboard:http/proxy/
 
-## Install the Pipeline and Its Tasks
-
-### Install the Required Tasks
-
-The pipeline requires tasks to be able to clone a Git repository, write files and build docker images
-
-[source,shell]
-----
-kubectl apply \
-  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.3/git-clone.yaml \
-  -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/write-file/0.1/write-file.yaml
-----
-
-We also need modified `s2i` and `buildah` task to properly build the WildFly S2I images:
-
-[source,shell]
-----
-kubectl apply -f ./hack-s2i.yaml -f ./hack-buildah.yaml
-----
-
-### Install the Pipeline
+## Install the Pipeline
 
 The pipeline can be installed with:
 
@@ -66,8 +46,7 @@ The pipeline can be installed with:
 kubectl apply -f ./wildfly-s2i-pipeline.yaml
 ----
 
-The pipeline will use a persistent volume to store the application code and any artifacts that are generated when the pipeline is run.
-This persistent volume is installed when the `wildfly-s2i-pipeline.yaml` is applied.
+This YAML file contains a collection of resources including the pipeline itself as well as its associated tasks and resources.
 
 ## Run the Pipeline
 
